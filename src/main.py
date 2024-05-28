@@ -36,8 +36,8 @@ def main():
 
     last_frame_time = time.perf_counter()
 
-    #_memory = memory.Memory()
-    #_cpu = cpu.CPU(_memory)
+    _memory = memory.Memory(load_rom("/Users/uymaz/Documents/roms/gb roms/Game Boy (2020)/Tetris (USA) (Rev-A).gb"))
+    _cpu = cpu.CPU(_memory)
 
     while running:
         start_time = time.perf_counter()
@@ -46,7 +46,9 @@ def main():
              if event.type == pygame.QUIT:
                   running = False
 
-        #rom shit
+        #run the cpu for a frame
+        for _ in range(int(CYCLES_PER_FRAME)):
+             _cpu.step()
 
         #update framebuffer afterwards
 
@@ -62,9 +64,11 @@ def main():
         if time_to_sleep > 0:
              time.sleep(time_to_sleep)
 
-def load_rom(self, rom_file):
-        # Load a Game Boy ROM into memory
-        print("test load rom")
+def load_rom(rom_file: str):
+        # Load a Game Boy ROM in rom_file into a rom bytearray and return it
+        with open(rom_file, 'rb') as file:
+            rom = bytearray(file.read())
+        return rom
 
 if __name__ == "__main__":
      main()

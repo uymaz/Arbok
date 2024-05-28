@@ -1,4 +1,99 @@
 import logging
+from dataclasses import dataclass
+from typing import Literal, Optional
+import json
+
+# Operand and Instruction inspired by the following article
+# https://www.inspiredpython.com/course/game-boy-emulator/game-boy-emulator-writing-the-z80-disassembler
+@dataclass(frozen=True)
+class Operand:
+    immediate: bool
+    name: str
+    bytes: int
+    value: Optional[int]
+    adjust: Optional[Literal["+", "-"]]
+
+    def create(self, value):
+        return Operand(immediate=self.immediate,
+                       name=self.name,
+                       bytes=self.bytes,
+                       value=value,
+                       adjust=self.adjust)
+
+    def print(self):
+        if self.adjust is None:
+            adjust = ""
+        else:
+            adjust = self.adjust
+        if self.value is not None:
+            if self.bytes is not None:
+                val = hex(self.value)
+            else:
+                val = self.value
+            v = val
+        else:
+            v = self.name
+        v = v + adjust
+        if self.immediate:
+            return v
+        return f'({v})'
+
+
+@dataclass
+class Instruction:
+    opcode: int
+    immediate: bool
+    operands: list[Operand]
+    cycles: list[int]
+    bytes: int
+    mnemonic: str
+    comment: str = ""
+
+    def create(self, operands):
+        return Instruction(opcode=self.opcode,
+                           immediate=self.immediate,
+                           operands=operands,
+                           cycles=self.cycles,
+                           bytes=self.bytes,
+                           mnemonic=self.mnemonic)
+
+    def print(self):
+        ops = ', '.join(op.print() for op in self.operands)
+        s = f"{self.mnemonic:<8} {ops}"
+        if self.comment:
+            s = s + f" ; {self.comment:<10}"
+        return s
+
+
+class Decoder:
+    def load_unprefixed_instructions(self) -> list[Instruction]:
+        with open('opcodes.json', 'r') as f:
+            data = json.load(f)
+
+        instructions = []
+        for opcode, info in data.pop('unprefixed').items():
+            operands = [Operand(immediate=op['immediate'], name=op['name'], bytes=op.get('bytes', 0),
+                                value=op.get('value', None), adjust=op.get('adjust', None)) for op in info['operands']]
+            instruction = Instruction(opcode=int(opcode, 16), immediate=info['immediate'], operands=operands,
+                                      cycles=info['cycles'], bytes=info['bytes'], mnemonic=info['mnemonic'])
+            instructions.append(instruction)
+
+        return instructions
+
+    def load_cbprefixed_instructions(self) -> list[Instruction]:
+        with open('opcodes.json', 'r') as f:
+            data = json.load(f)
+
+        instructions = []
+        for opcode, info in data.pop('cbprefixed').items():
+            operands = [Operand(immediate=op['immediate'], name=op['name'], bytes=op.get('bytes', 0),
+                                value=op.get('value', None), adjust=op.get('adjust', None)) for op in info['operands']]
+            instruction = Instruction(opcode=int(opcode, 16), immediate=info['immediate'], operands=operands,
+                                      cycles=info['cycles'], bytes=info['bytes'], mnemonic=info['mnemonic'])
+            instructions.append(instruction)
+
+        return instructions
+
 
 class CPU:
     def __init__(self, memory):
@@ -9,7 +104,6 @@ class CPU:
         
     
     def fetch_instruction(self):
-        # Fetch the next instruction from memory
         logging.debug("CPU::fetch_instruction called")
         return self.memory.read_byte(self.program_counter)
     
@@ -23,7 +117,7 @@ class CPU:
         # Decode and execute the instruction
         logging.debug("CPU::decode_and_execute")
         instruction = self.fetch_instruction()
-        
+
         opcode = instruction & 0xFF  # Extract the opcode from the instruction
         if opcode == 0x00:
             # NOP
