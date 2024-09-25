@@ -1,6 +1,7 @@
 import pygame
 import time
 import numpy
+import logging
 
 import cpu
 import memory
@@ -12,7 +13,7 @@ SCALE = 4
 WINDOW_WIDTH = GB_SCREEN_WIDTH * SCALE
 WINDOW_HEIGHT = GB_SCREEN_HEIGHT * SCALE
 
-GB_CPU_FREQ = 4194304 #4.193mhz
+GB_CPU_FREQ = 4194304  #4.193mhz
 FRAME_RATE = 60
 
 TIME_PER_FRAME = 1 / FRAME_RATE
@@ -28,15 +29,18 @@ framebuffer = numpy.zeros((GB_SCREEN_HEIGHT, GB_SCREEN_WIDTH, 3), dtype = numpy.
 # Initialize emulator components (CPU, memory, display, input, cartridge)
 
 def render_framebuffer():
-     surface = pygame.surfarray.make_surface(numpy.kron(framebuffer, numpy.ones((SCALE, SCALE, 1))))
-     window.blit(surface, (0,0))
+    surface = pygame.surfarray.make_surface(numpy.kron(framebuffer, numpy.ones((SCALE, SCALE, 1))))
+    window.blit(surface, (0,0))
 
 def main():
     running = True
 
+    logger = logging.getLogger(__name__)
+    logging.basicConfig(filename='example.log', encoding='utf-8', level=logging.DEBUG)
+
     last_frame_time = time.perf_counter()
 
-    _memory = memory.Memory(load_rom("/Users/uymaz/Documents/roms/gb roms/Game Boy (2020)/Tetris (USA) (Rev-A).gb"))
+    _memory = memory.Memory(load_rom("C:\\Users\\Umut\\Documents\\ROMs\\GB\\Tetris (World) (Rev 1).gb"))
     _cpu = cpu.CPU(_memory)
 
     while running:
@@ -48,7 +52,7 @@ def main():
 
         #run the cpu for a frame
         for _ in range(int(CYCLES_PER_FRAME)):
-             _cpu.step()
+            _cpu.step()
 
         #update framebuffer afterwards
 
