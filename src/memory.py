@@ -9,8 +9,6 @@ class ROMHeader:
 
         :param rom: The ROM header in binary format.
         """
-        logging.debug("ROMHeader::init called")
-
         self.title = rom[0x134:0x143].decode("utf-8")
         self.manufacturer_code = rom[0x13F:0x143].decode("utf-8")
         self.cgb_flag = rom[0x143]
@@ -43,8 +41,6 @@ class Memory:
 
         :param rom: The ROM in binary format.
         """
-        logging.debug("Memory::init called")
-
         self.rom = rom
         self.ram = [0] * 0x2000  # 8192B
         self.vram = [0] * 0x2000
@@ -57,6 +53,15 @@ class Memory:
         self.interrupt_enable = 0
 
         self.header = ROMHeader(rom)
+
+    def read_word(self, address):
+        # Read a word from memory at the given address
+        return self.read_byte(address) | (self.read_byte(address + 1) << 8)
+
+    def write_word(self, address, value):
+        # Write a word to memory at the given address
+        self.write_byte(address, value & 0xFF)
+        self.write_byte(address + 1, (value >> 8) & 0xFF)
 
     def read_byte(self, address):
         # Read a byte from memory at the given address
@@ -89,8 +94,6 @@ class Memory:
 
     def write_byte(self, address, value):
         # Write a byte to memory at the given address
-        logging.debug("Memory::write_byte called")
-
         if 0x0000 <= address <= 0x7FFF:
             # future MBC?
             pass  # Not implemented yet

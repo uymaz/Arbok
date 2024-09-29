@@ -94,30 +94,56 @@ class Decoder:
 
         return instructions
 
+    def decode(self, opcode: int, instructions: list[Instruction]) -> Instruction:
+        for instruction in instructions:
+            if instruction.opcode == opcode:
+                return instruction
+        raise ValueError(f"Opcode {opcode} not found in instructions")
+
 
 class CPU:
     def __init__(self, memory):
         # Initialize CPU registers, flags, and other state
 
-        self.flags : List[bool] = [False, False, False, False]
+        # Flags as a dict to make it easier to access them
+        # self.flags = {'Z': False, 'N': False, 'H': False, 'C': False}
         self.memory = memory
         self.program_counter = 0x100  # Start execution at ROM address 0x100
-        self.registers = {'A': 0, 'B': 0, 'C': 0, 'D': 0, 'E': 0, 'H': 0, 'L': 0}
+        self.registers = { # Initialize registers
+            'A': 0x01, 'F': 0xB0,
+            'B': 0x00, 'C': 0x13,
+            'D': 0x00, 'E': 0xD8,
+            'H': 0x01, 'L': 0x4D,
+        }
+        self.SP = 0xFFFE  # Stack Pointer
 
+    def push(self, value: int):
+        self.SP = (self.SP - 1) & 0xFFFF
+        self.memory.write_byte(self.SP, (value >> 8) & 0xFF)
+        self.SP = (self.SP - 1) & 0xFFFF
+        self.memory.write_byte(self.SP, value & 0xFF)
+
+    def pop(self) -> int:
+        value = self.memory.read_byte(self.SP)
+        self.SP = (self.SP + 1) & 0xFFFF
+        value |= self.memory.read_byte(self.SP) << 8
+        self.SP = (self.SP + 1) & 0xFFFF
+        return value
 
     def fetch_instruction(self):
-        logging.debug("CPU::fetch_instruction called")
         return self.memory.read_byte(self.program_counter)
 
     #used for BC and HL registers, mainly
     #Returns the value of (register_a << 8) + register_b
     def lookup_16bit_register(self, register_a, register_b):
-        logging.debug("CPU::lookup_16bit_register called")
         return (register_a << 8) + register_b
 
     def decode_and_execute(self, instruction):
         instruction = self.fetch_instruction()
-        logging.debug(f"Instruction decoded: {instruction}")
+        decoder = Decoder()
+        decoder.load_unprefixed_instructions()
+
+        logging.debug(f"{decoder.decode(instruction, decoder.load_unprefixed_instructions()).print()}")
 
         opcode = instruction & 0xFF  # Extract the opcode from the instruction
         if opcode == 0x00:
@@ -1082,7 +1108,7 @@ class CPU:
             self.program_counter += 1
         elif opcode == 0xC0:
             # RET NZ: Return from subroutine if the Zero flag is not set
-            if not self.flags['Z']:
+            if not self.registers['F'] & 0x80:
                 self.program_counter = self.pop()
             else:
                 self.program_counter += 1
@@ -1097,19 +1123,20 @@ class CPU:
             # JP NZ, nn: Jump to address nn if the Zero flag is not set
             self.program_counter += 1
             address = self.memory.read_word(self.program_counter)
-            if not self.flags['Z']:
+            if not self.registers['F'] & 0x80:
                 self.program_counter = address
             else:
                 self.program_counter += 2
         elif opcode == 0xC3:
             # JP nn: Unconditional jump to address nn
             self.program_counter += 1
-            self.program_counter = self.memory.read_word(self.program_counter)
+            address = self.memory.read_word(self.program_counter)
+            self.program_counter = address
         elif opcode == 0xC4:
             # CALL NZ, nn: Call subroutine at address nn if Zero flag is not set
             self.program_counter += 1
             address = self.memory.read_word(self.program_counter)
-            if not self.flags['Z']:
+            if not self.registers['F'] & 0x80:
                 self.push(self.program_counter + 3)  # +3 because it includes 2 for address and 1 for this opcode TODO STACK POINTER
                 self.program_counter = address
             else:
@@ -1133,7 +1160,7 @@ class CPU:
             self.program_counter = 0x0000
         elif opcode == 0xC8:
             # RET Z: Return from subroutine if Zero flag is set
-            if self.flags['Z']:
+            if self.registers['F'] & 0x80:
                 self.program_counter = self.pop()
             else:
                 self.program_counter += 1
@@ -1144,7 +1171,7 @@ class CPU:
             # JP Z, nn: Jump to address nn if the Zero flag is set
             self.program_counter += 1
             address = self.memory.read_word(self.program_counter)
-            if self.flags['Z']:
+            if self.registers['F'] & 0x80:
                 self.program_counter = address
             else:
                 self.program_counter += 2
@@ -1155,7 +1182,7 @@ class CPU:
             # CALL Z, nn: Call subroutine at address nn if Zero flag is set
             self.program_counter += 1
             address = self.memory.read_word(self.program_counter)
-            if self.flags['Z']:
+            if self.registers['F'] & 0x80:
                 self.push(self.program_counter + 3)
                 self.program_counter = address
             else:
@@ -1178,7 +1205,7 @@ class CPU:
             self.program_counter = 0x0008
         elif opcode == 0xD0:
             # RET NC: Return from subroutine if Carry flag is not set
-            if not self.flags['C']:
+            if not self.registers['F'] & 0x10:
                 self.program_counter = self.pop()
             else:
                 self.program_counter += 1
@@ -1193,7 +1220,7 @@ class CPU:
             # JP NC, nn: Jump to address nn if Carry flag is not set
             self.program_counter += 1
             address = self.memory.read_word(self.program_counter)
-            if not self.flags['C']:
+            if not self.registers['F'] & 0x10:
                 self.program_counter = address
             else:
                 self.program_counter += 2
@@ -1203,7 +1230,7 @@ class CPU:
             # CALL NC, nn: Call subroutine at address nn if Carry flag is not set
             self.program_counter += 1
             address = self.memory.read_word(self.program_counter)
-            if not self.flags['C']:
+            if not self.registers['F'] & 0x10:
                 self.push(self.program_counter + 3)
                 self.program_counter = address
             else:
@@ -1227,7 +1254,7 @@ class CPU:
             self.program_counter = 0x0010
         elif opcode == 0xD8:
             # RET C: Return from subroutine if Carry flag is set
-            if self.flags['C']:
+            if self.registers['F'] & 0x10:
                 self.program_counter = self.pop()
             else:
                 self.program_counter += 1
@@ -1238,7 +1265,7 @@ class CPU:
             # JP C, nn: Jump to address nn if Carry flag is set
             self.program_counter += 1
             address = self.memory.read_word(self.program_counter)
-            if self.flags['C']:
+            if self.registers['F'] & 0x10:
                 self.program_counter = address
             else:
                 self.program_counter += 2
@@ -1248,7 +1275,7 @@ class CPU:
             # CALL C, nn: Call subroutine at address nn if Carry flag is set
             self.program_counter += 1
             address = self.memory.read_word(self.program_counter)
-            if self.flags['C']:
+            if self.registers['F'] & 0x10:
                 self.push(self.program_counter + 3)
                 self.program_counter = address
             else:
@@ -1417,83 +1444,165 @@ class CPU:
     def cp(self, param, immediate_value):
         # Compare the value in param with the immediate value
         result = param - immediate_value
-        self.flags['Z'] = result == 0
-        self.flags['N'] = True
-        self.flags['H'] = (param & 0xF) < (immediate_value & 0xF)
-        self.flags['C'] = param < immediate_value
+        flag_z = 0
+        flag_n = 1
+        flag_h = 0
+        flag_c = 0
+
+        if result == 0:
+            flag_z = 1
+
+        if (param & 0xF) < (immediate_value & 0xF):
+            flag_h = 1
+
+        if param < immediate_value:
+            flag_c = 1
+        #self.registers['F'] = (flag_z << 7) | (flag_n << 6) | (flag_h << 5) | (flag_c << 4)
+        self.set_flag('Z', flag_z)
+        self.set_flag('N', flag_n)
+        self.set_flag('H', flag_h)
+        self.set_flag('C', flag_c)
+
+    def get_flag(self, flag: str) -> int:
+        # switch case for flags - return the corresponding bit in the F register
+        if flag == 'Z':
+            return (self.registers['F'] & 0x80) >> 7
+        elif flag == 'N':
+            return (self.registers['F'] & 0x40) >> 6
+        elif flag == 'H':
+            return (self.registers['F'] & 0x20) >> 5
+        elif flag == 'C':
+            return (self.registers['F'] & 0x10) >> 4
+
+    def set_flag(self, flag: str, value: int):
+        # switch case for flags - set the corresponding bit in the F register
+        if flag == 'Z':
+            self.registers['F'] = (self.registers['F'] & 0x7F) | (value << 7)
+        elif flag == 'N':
+            self.registers['F'] = (self.registers['F'] & 0xBF) | (value << 6)
+        elif flag == 'H':
+            self.registers['F'] = (self.registers['F'] & 0xDF) | (value << 5)
+        elif flag == 'C':
+            self.registers['F'] = (self.registers['F'] & 0xEF) | (value << 4)
+
 
     def or_op(self, param, immediate_value):
         # Perform a logical OR operation between param and the immediate value
         result = param | immediate_value
-        self.flags['Z'] = result == 0
-        self.flags['N'] = False
-        self.flags['H'] = False
-        self.flags['C'] = False
+        if result == 0:
+            self.set_flag('Z', result == 1)
+        else:
+            self.set_flag('Z', 0)
+        self.set_flag('N', 0)
+        self.set_flag('H', 0)
+        self.set_flag('C', 0)
         return result
 
     def xor_op(self, param, immediate_value):
         # Perform a logical XOR operation between param and the immediate value
         result = param ^ immediate_value
-        self.flags['Z'] = result == 0
-        self.flags['N'] = False
-        self.flags['H'] = False
-        self.flags['C'] = False
+        if result == 0:
+            self.set_flag('Z', result == 1)
+        else:
+            self.set_flag('Z', 0)
+        self.set_flag('N', 0)
+        self.set_flag('H', 0)
+        self.set_flag('C', 0)
         return result
 
     def and_op(self, param, immediate_value):
         # Perform a logical AND operation between param and the immediate value
         result = param & immediate_value
-        self.flags['Z'] = result == 0
-        self.flags['N'] = False
-        self.flags['H'] = True
-        self.flags['C'] = False
+        if result == 0:
+            self.set_flag('Z', result == 1)
+        else:
+            self.set_flag('Z', 0)
+        self.set_flag('N', 0)
+        self.set_flag('H', 0)
+        self.set_flag('C', 0)
         return result
 
     def sbc(self, param, immediate_value):
         # Subtract the immediate value and the carry flag from param
-        carry = 1 if self.flags['C'] else 0
+        carry = 1 if self.get_flag('C') == 1 else 0
         result = param - immediate_value - carry
-        self.flags['Z'] = result == 0
-        self.flags['N'] = True
-        self.flags['H'] = (param & 0xF) < (immediate_value & 0xF) + carry
-        self.flags['C'] = param < immediate_value + carry
+        if result == 0:
+            self.set_flag('Z', result == 1)
+        else:
+            self.set_flag('Z', 0)
+        self.set_flag('N', True)
+        if (param & 0xF) < (immediate_value & 0xF) + carry:
+            self.set_flag('H', 1)
+        else:
+            self.set_flag('H', 0)
+        if param < immediate_value + carry:
+            self.set_flag('C', 1)
+        else:
+            self.set_flag('C', 1)
         return result
 
     def adc(self, param, immediate_value):
         # Add the immediate value and the carry flag to param
-        carry = 1 if self.flags['C'] else 0
+        carry = 1 if self.get_flag('C') == 1 else 0
         result = param + immediate_value + carry
-        self.flags['Z'] = result == 0
-        self.flags['N'] = False
-        self.flags['H'] = (param & 0xF) + (immediate_value & 0xF) + carry > 0xF
-        self.flags['C'] = param + immediate_value + carry > 0xFF
+        if result == 0:
+            self.set_flag('Z', result == 1)
+        else:
+            self.set_flag('Z', 0)
+        self.set_flag('N', 0)
+        if (param & 0xF) + (immediate_value & 0xF) + carry > 0xF:
+            self.set_flag('H', 1)
+        else:
+            self.set_flag('H', 0)
+        if param + immediate_value + carry > 0xFF:
+            self.set_flag('C', 1)
+        else:
+            self.set_flag('C', 0)
         return result
 
     def sub(self, param, immediate_value):
         # Subtract the immediate value from param
         result = param - immediate_value
-        self.flags['Z'] = result == 0
-        self.flags['N'] = True
-        self.flags['H'] = (param & 0xF) < (immediate_value & 0xF)
-        self.flags['C'] = param < immediate_value
+        if result == 0:
+            self.set_flag('Z', result == 1)
+        else:
+            self.set_flag('Z', 0)
+        self.set_flag('N', True)
+        if (param & 0xF) < (immediate_value & 0xF):
+            self.set_flag('H', 1)
+        else:
+            self.set_flag('H', 0)
+        if param < immediate_value:
+            self.set_flag('C', 1)
+        else:
+            self.set_flag('C', 0)
         return result
 
     def add(self, param, immediate_value):
         # Add the immediate value to param
         result = param + immediate_value
-        self.flags['Z'] = result == 0
-        self.flags['N'] = False
-        self.flags['H'] = (param & 0xF) + (immediate_value & 0xF) > 0xF
-        self.flags['C'] = param + immediate_value > 0xFF
+        if result == 0:
+            self.set_flag('Z', result == 1)
+        else:
+            self.set_flag('Z', 0)
+        self.set_flag('N', 0)
+        if (param & 0xF) + (immediate_value & 0xF) > 0xF:
+            self.set_flag('H', 1)
+        else:
+            self.set_flag('H', 0)
+        if param + immediate_value > 0xFF:
+            self.set_flag('C', 1)
+        else:
+            self.set_flag('C', 0)
         return result
 
 
-def step(self):
-        # Emulate one CPU cycle: fetch, decode, and execute an instruction
-        # Fetch the next instruction
-        instruction = self.fetch_instruction()
-        # Decode and execute the instruction
-        self.decode_and_execute(instruction)
+    def step(self):
+            # Emulate one CPU cycle: fetch, decode, and execute an instruction
+            # Fetch the next instruction
+            instruction = self.fetch_instruction()
+            # Decode and execute the instruction
+            self.decode_and_execute(instruction)
 
 
-        logging.debug("CPU::emulate_cycle")
+            logging.debug("CPU::emulate_cycle")
